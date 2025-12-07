@@ -3,14 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Station V8.6 - Fixed</title>
+    <title>Crypto Station V11.2 - Cloud Fixed</title>
+    
+    <!-- UI & Logic -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- Firebase SDK (Compat Version pour HTML simple) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
     <script>
-        // Sécurité pour Tailwind
         if (typeof tailwind !== 'undefined') {
             tailwind.config = { darkMode: 'class' };
         } else {
@@ -33,23 +39,31 @@
         .tab-active { border-bottom: 2px solid #6366f1; color: #6366f1; font-weight: bold; }
         .tab-inactive { color: #9ca3af; border-bottom: 2px solid transparent; }
         .dark .tab-active { color: #fff; border-color: #6366f1; }
-        
-        /* Animation barre de progression */
         .progress-bar { transition: width 1s ease-in-out; }
     </style>
 
     <script>
+        // CONFIGURATION FIREBASE UTILISATEUR
+        const USER_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyBc-nsjHfjO02U3QH_pC1z0sO7LWuce8N4",
+            authDomain: "cryptosystem-88cb1.firebaseapp.com",
+            projectId: "cryptosystem-88cb1",
+            storageBucket: "cryptosystem-88cb1.firebasestorage.app",
+            messagingSenderId: "202665600158",
+            appId: "1:202665600158:web:fd2baf77d38d029534c78f"
+        };
+
         const I18N = {
             fr: {
-                dashboard: "Tableau de bord", analytics: "Analyses", settings: "Réglages",
+                dashboard: "Tableau de bord", analytics: "Analyses", settings: "Réglages", cloud: "Cloud Sync",
                 netWorth: "Valeur Totale", invested: "Investi", pnl: "PnL (Latent)", perf: "Performance",
                 addTx: "Transaction", wallet: "Portefeuille", spot: "Spot", earn: "Earn", futures: "Futures",
                 date: "Date", crypto: "Crypto", amount: "Montant", qty: "Quantité", confirm: "Confirmer",
                 security: "Sécurité", enterPin: "Entrez PIN", unlock: "Déverrouiller", setPin: "Créer PIN",
                 exportCSV: "Export Excel (CSV)", exportJSON: "Sauvegarde (JSON)", importJSON: "Restaurer",
-                backupTitle: "Données", volatility: "Volatilité", projection: "Projection", risk: "Risque",
+                backupTitle: "Données Locales", volatility: "Volatilité", projection: "Projection", risk: "Risque",
                 importSuccess: "Succès !", importError: "Erreur fichier.",
-                welcomeShare: "App locale & sécurisée. Vos données restent sur cet appareil.",
+                welcomeShare: "App locale & sécurisée.",
                 resetApp: "Tout Effacer", demoMode: "Charger Démo", dcaTool: "Simulateur DCA",
                 dcaTitle: "Simulateur de Moyenne (DCA)", currentAvg: "Prix Moyen Actuel",
                 newBuy: "Nouvel Achat", newAvg: "Nouveau Prix Moyen", simulate: "Simuler",
@@ -59,18 +73,28 @@
                 simPrice: "Prix d'achat simulé",
                 goalTitle: "Objectif Global", setGoal: "Définir votre objectif ($/€) :",
                 currencySwitch: "Devise",
-                statusOnline: "En ligne", statusSync: "Sync...", statusError: "Erreur API (Cache)"
+                statusOnline: "En ligne", statusSync: "Sync...", statusError: "Erreur API (Cache)",
+                // Cloud Texts
+                cloudTitle: "Synchronisation Cloud (Firebase)",
+                cloudDesc: "Connectez-vous pour synchroniser vos données entre PC et Mobile.",
+                pasteConfig: "Configuration Firebase détectée :",
+                initFirebase: "Initialiser Connexion",
+                login: "Se connecter", register: "Créer un compte", email: "Email", password: "Mot de passe",
+                loggedInAs: "Connecté en tant que :", logout: "Déconnexion",
+                syncNow: "Sauvegarder dans le Cloud", loadCloud: "Télécharger du Cloud",
+                cloudSuccess: "Synchronisation réussie !", cloudError: "Erreur Cloud.",
+                configSaved: "Configuration sauvegardée !", configInvalid: "Configuration invalide."
             },
             en: {
-                dashboard: "Dashboard", analytics: "Analytics", settings: "Settings",
+                dashboard: "Dashboard", analytics: "Analytics", settings: "Settings", cloud: "Cloud Sync",
                 netWorth: "Net Worth", invested: "Invested", pnl: "Unrealized PnL", perf: "Performance",
                 addTx: "Transaction", wallet: "Wallet", spot: "Spot", earn: "Earn", futures: "Futures",
                 date: "Date", crypto: "Crypto", amount: "Amount", qty: "Quantity", confirm: "Confirm",
                 security: "Security", enterPin: "Enter PIN", unlock: "Unlock", setPin: "Set PIN",
                 exportCSV: "Export Excel (CSV)", exportJSON: "Backup (JSON)", importJSON: "Restore",
-                backupTitle: "Data", volatility: "Volatility", projection: "Projection", risk: "Risk",
+                backupTitle: "Local Data", volatility: "Volatility", projection: "Projection", risk: "Risk",
                 importSuccess: "Success!", importError: "File error.",
-                welcomeShare: "Local & secure app. Data stays on this device.",
+                welcomeShare: "Local & secure app.",
                 resetApp: "Wipe All Data", demoMode: "Load Demo Data", dcaTool: "DCA Simulator",
                 dcaTitle: "DCA Simulator (Average)", currentAvg: "Current Avg Price",
                 newBuy: "New Buy", newAvg: "New Avg Price", simulate: "Simulate",
@@ -80,7 +104,17 @@
                 simPrice: "Simulated Buy Price",
                 goalTitle: "Global Goal", setGoal: "Set your goal ($/€):",
                 currencySwitch: "Currency",
-                statusOnline: "Online", statusSync: "Sync...", statusError: "API Error (Cached)"
+                statusOnline: "Online", statusSync: "Sync...", statusError: "API Error (Cached)",
+                // Cloud Texts
+                cloudTitle: "Cloud Synchronization (Firebase)",
+                cloudDesc: "Log in to sync data between PC and Mobile.",
+                pasteConfig: "Firebase Configuration Detected:",
+                initFirebase: "Initialize Connection",
+                login: "Login", register: "Register", email: "Email", password: "Password",
+                loggedInAs: "Logged in as:", logout: "Logout",
+                syncNow: "Save to Cloud", loadCloud: "Load from Cloud",
+                cloudSuccess: "Sync successful!", cloudError: "Cloud error.",
+                configSaved: "Config saved!", configInvalid: "Invalid config."
             }
         };
 
@@ -118,12 +152,17 @@
                 transactions: JSON.parse(localStorage.getItem('txs') || '[]') || [],
                 settings: JSON.parse(localStorage.getItem('settings') || '{"currency":"USD", "lang":"fr", "goal": 1000}'),
                 history: JSON.parse(localStorage.getItem('history') || '[]') || [], 
-
-                // Prices now loaded from cache if available to prevent blank screens
                 prices: JSON.parse(localStorage.getItem('cached_prices') || '{}'),
-                
-                // --- CORRECTION: Ajout de assets ici ---
                 assets: ASSETS_CONFIG,
+                
+                // FIREBASE STATE
+                // On utilise la config fournie par défaut
+                fbConfigInput: JSON.stringify(USER_FIREBASE_CONFIG, null, 2),
+                fbApp: null,
+                fbUser: null,
+                fbEmail: '',
+                fbPass: '',
+                fbLoading: false,
                 
                 loading: false,
                 apiError: false,
@@ -133,33 +172,129 @@
 
                 form: { symbol: 'BNB', date: new Date().toISOString().split('T')[0], amount: '', qty: '', wallet: 'spot' },
                 dcaForm: { symbol: 'BTC', currentPrice: '', newAmount: 100 },
-                
                 volatility: 0, projection: 0, riskLevel: 'Low',
 
                 init() {
                     if(!this.darkMode) document.documentElement.classList.remove('dark');
                     if (!this.savedPin) this.locked = true; 
-                    
                     if(!this.settings.goal) this.settings.goal = 1000;
 
                     this.fetchData();
-                    setInterval(() => this.fetchData(), 120000); // 2 mins interval to avoid rate limit
+                    setInterval(() => this.fetchData(), 120000); 
                     
-                    // Initial chart draw with cached data
                     setTimeout(() => {
                         this.takeSnapshot(); 
                         this.updateCharts();
+                        // Auto init firebase if possible
+                        this.initFirebase(true); 
                     }, 500);
 
                     this.$watch('transactions', () => { this.save(); this.updateCharts(); });
                     this.$watch('settings', () => { localStorage.setItem('settings', JSON.stringify(this.settings)); });
-                    // Cache prices when they update
                     this.$watch('prices', () => { localStorage.setItem('cached_prices', JSON.stringify(this.prices)); });
                 },
 
                 t(key) {
                     const lang = (this.settings && this.settings.lang) ? this.settings.lang : 'fr';
                     return (I18N[lang] && I18N[lang][key]) ? I18N[lang][key] : key;
+                },
+
+                // --- FIREBASE LOGIC (ROBUSTE v2) ---
+                initFirebase(silent = false) {
+                    try {
+                        let configStr = this.fbConfigInput.trim();
+                        let config = null;
+
+                        // 1. Essayer le parsing JSON strict
+                        try {
+                            config = JSON.parse(configStr);
+                        } catch (e) {
+                            // 2. Fallback: Parsing objet JS (pour le copier-coller de Firebase)
+                            // Utilisation de Function pour évaluer l'objet JS en toute sécurité (client-side)
+                            if (configStr.includes('=')) {
+                                configStr = configStr.substring(configStr.indexOf('=') + 1).trim();
+                            }
+                            if (configStr.endsWith(';')) configStr = configStr.slice(0, -1);
+                            
+                            // Reconstruction sécurisée
+                            config = new Function('return ' + configStr)();
+                        }
+
+                        if (!config || !config.apiKey) throw new Error("Configuration invalide ou vide");
+
+                        if (!firebase.apps.length) {
+                            this.fbApp = firebase.initializeApp(config);
+                        } else {
+                            this.fbApp = firebase.app();
+                        }
+
+                        firebase.auth().onAuthStateChanged((user) => {
+                            this.fbUser = user;
+                        });
+
+                        if(!silent) alert(this.t('configSaved'));
+
+                    } catch (e) {
+                        console.error("Firebase Init Error:", e);
+                        if(!silent) alert(this.t('configInvalid') + " " + e.message);
+                    }
+                },
+
+                async fbLogin() {
+                    if(!this.fbApp) return alert("Firebase non initialisé");
+                    try {
+                        await firebase.auth().signInWithEmailAndPassword(this.fbEmail, this.fbPass);
+                    } catch (e) { alert("Erreur Login: " + e.message); }
+                },
+
+                async fbRegister() {
+                    if(!this.fbApp) return alert("Firebase non initialisé");
+                    try {
+                        await firebase.auth().createUserWithEmailAndPassword(this.fbEmail, this.fbPass);
+                        alert("Compte créé ! Vous êtes connecté.");
+                    } catch (e) { alert("Erreur Création: " + e.message); }
+                },
+
+                fbLogout() {
+                    if(this.fbApp) firebase.auth().signOut();
+                },
+
+                async fbSyncUp() {
+                    if(!this.fbUser) return alert("Connectez-vous d'abord");
+                    this.fbLoading = true;
+                    try {
+                        const db = firebase.firestore();
+                        const docRef = db.collection('users').doc(this.fbUser.uid);
+                        await docRef.set({
+                            transactions: this.transactions,
+                            history: this.history,
+                            settings: this.settings,
+                            lastUpdated: new Date().toISOString()
+                        });
+                        alert(this.t('cloudSuccess'));
+                    } catch (e) { alert(this.t('cloudError') + " " + e.message); }
+                    this.fbLoading = false;
+                },
+
+                async fbSyncDown() {
+                    if(!this.fbUser) return alert("Connectez-vous d'abord");
+                    this.fbLoading = true;
+                    try {
+                        const db = firebase.firestore();
+                        const doc = await db.collection('users').doc(this.fbUser.uid).get();
+                        if (doc.exists) {
+                            const data = doc.data();
+                            this.transactions = data.transactions || [];
+                            this.history = data.history || [];
+                            this.settings = data.settings || this.settings;
+                            this.save();
+                            this.updateCharts();
+                            alert(this.t('importSuccess'));
+                        } else {
+                            alert("Aucune donnée trouvée dans le Cloud.");
+                        }
+                    } catch (e) { alert(this.t('cloudError') + " " + e.message); }
+                    this.fbLoading = false;
                 },
 
                 // --- FEATURES ---
@@ -189,7 +324,6 @@
                     return Math.min(pct, 100);
                 },
 
-                // --- MODALS ---
                 askConfirm(titleKey, messageKey, callback) {
                     this.confirmModal.title = this.t(titleKey);
                     this.confirmModal.message = this.t(messageKey);
@@ -227,7 +361,6 @@
                     this.locked = true; this.showSettings = false;
                 },
                 get dcaSimulation() {
-                    // Check if assets loaded to avoid undefined errors
                     if (!this.assets || this.assets.length === 0) return { currentAvg: 0, newAvg: 0, currentPrice: 0, simPrice: 0, changePct: 0, owned: false };
 
                     const portfolioAsset = this.portfolio ? this.portfolio.find(a => a.symbol === this.dcaForm.symbol) : null;
@@ -264,9 +397,7 @@
                     }
                 },
                 async fetchData() {
-                    // Check if assets exists
                     if (!this.assets) return;
-                    
                     this.loading = true;
                     this.apiError = false;
                     const ids = this.assets.map(a => a.id).join(',');
@@ -276,9 +407,8 @@
                         this.prices = await res.json();
                         this.takeSnapshot(); this.calculateMetrics(); this.updateCharts();
                     } catch (e) { 
-                        console.warn("API Error (using cache if available):", e); 
+                        console.warn("API Error:", e); 
                         this.apiError = true;
-                        // On error, we rely on cached prices loaded in init
                     } 
                     finally { this.loading = false; }
                 },
@@ -351,7 +481,6 @@
                     let relevantTxs = this.transactions || [];
                     if (this.filterWallet !== 'all') relevantTxs = relevantTxs.filter(t => t.wallet === this.filterWallet);
                     
-                    // SAFEGUARD: Check assets exists
                     if (!this.assets) return [];
                     
                     return this.assets.map(asset => {
@@ -463,7 +592,7 @@
             <div class="flex items-center gap-4 mb-4 md:mb-0">
                 <div class="bg-indigo-600 p-3 rounded-lg text-white"><i class="fas fa-rocket text-xl"></i></div>
                 <div>
-                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V8.6</h1>
+                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V11.2</h1>
                     <div class="flex items-center text-xs text-gray-500 dark:text-slate-400">
                         <span class="w-2 h-2 rounded-full mr-2" :class="apiError ? 'bg-red-500' : (loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400')"></span>
                         <span x-text="apiError ? t('statusError') : (loading ? t('statusSync') : t('statusOnline'))"></span>
@@ -471,9 +600,7 @@
                 </div>
             </div>
             <div class="flex gap-2">
-                <!-- Bouton Devise -->
                 <button @click="toggleCurrency()" class="px-3 py-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition text-sm font-bold text-indigo-600 dark:text-indigo-400" x-text="settings.currency"></button>
-                
                 <button @click="toggleTheme()" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas" :class="darkMode ? 'fa-sun text-yellow-400' : 'fa-moon text-gray-600'"></i></button>
                 <button @click="showSettings = !showSettings" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas fa-cog text-gray-600 dark:text-gray-300"></i></button>
                 <button @click="togglePriv()" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas text-gray-600 dark:text-gray-300" :class="privacy ? 'fa-eye-slash' : 'fa-eye'"></i></button>
@@ -518,6 +645,66 @@
         <div class="flex space-x-6 mb-6 border-b border-gray-200 dark:border-slate-700 pb-2 overflow-x-auto">
             <button @click="tab = 'dashboard'" class="pb-2 font-medium transition" :class="tab==='dashboard' ? 'tab-active' : 'tab-inactive'" x-text="t('dashboard')"></button>
             <button @click="tab = 'analytics'; setTimeout(updateCharts, 100)" class="pb-2 font-medium transition" :class="tab==='analytics' ? 'tab-active' : 'tab-inactive'" x-text="t('analytics')"></button>
+            <button @click="tab = 'cloud'" class="pb-2 font-medium transition" :class="tab==='cloud' ? 'tab-active' : 'tab-inactive'"><i class="fas fa-cloud mr-2"></i><span x-text="t('cloud')"></span></button>
+        </div>
+
+        <!-- CLOUD TAB -->
+        <div x-show="tab === 'cloud'" x-cloak class="fade-in max-w-2xl mx-auto">
+            <div class="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-md">
+                <div class="text-center mb-6">
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 mb-4">
+                        <i class="fas fa-cloud text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold dark:text-white" x-text="t('cloudTitle')"></h3>
+                    <p class="text-sm text-gray-500 dark:text-slate-400" x-text="t('cloudDesc')"></p>
+                </div>
+
+                <!-- Step 1: Config (Pre-filled) -->
+                <div x-show="!fbApp" class="space-y-4">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300" x-text="t('pasteConfig')"></label>
+                    <!-- Pre-filled config -->
+                    <textarea x-model="fbConfigInput" rows="6" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded-lg p-3 text-xs font-mono dark:text-white focus:border-indigo-500 outline-none"></textarea>
+                    <button @click="initFirebase()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition" x-text="t('initFirebase')"></button>
+                </div>
+
+                <!-- Step 2: Auth -->
+                <div x-show="fbApp && !fbUser" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="email" x-model="fbEmail" :placeholder="t('email')" class="bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-2 text-sm dark:text-white">
+                        <input type="password" x-model="fbPass" :placeholder="t('password')" class="bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-2 text-sm dark:text-white">
+                    </div>
+                    <div class="flex gap-4">
+                        <button @click="fbLogin()" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg" x-text="t('login')"></button>
+                        <button @click="fbRegister()" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 rounded-lg" x-text="t('register')"></button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Sync Actions -->
+                <div x-show="fbUser" class="space-y-6">
+                    <div class="flex justify-between items-center bg-indigo-50 dark:bg-indigo-900/20 p-3 rounded-lg border border-indigo-100 dark:border-indigo-900/50">
+                        <div class="text-sm">
+                            <span class="text-gray-500 dark:text-gray-400" x-text="t('loggedInAs')"></span>
+                            <strong class="dark:text-white ml-1" x-text="fbUser?.email"></strong>
+                        </div>
+                        <button @click="fbLogout()" class="text-xs text-red-500 hover:text-red-400 font-bold" x-text="t('logout')"></button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button @click="fbSyncUp()" :disabled="fbLoading" class="p-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/40 transition flex flex-col items-center gap-3 group">
+                            <div class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-300 group-hover:scale-110 transition"><i class="fas fa-cloud-upload-alt text-2xl"></i></div>
+                            <span class="font-bold text-blue-700 dark:text-blue-300" x-text="t('syncNow')"></span>
+                            <span class="text-xs text-blue-500 dark:text-blue-400">Local -> Cloud</span>
+                        </button>
+
+                        <button @click="fbSyncDown()" :disabled="fbLoading" class="p-6 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl hover:bg-orange-100 dark:hover:bg-orange-900/40 transition flex flex-col items-center gap-3 group">
+                            <div class="w-12 h-12 rounded-full bg-orange-100 dark:bg-orange-800 flex items-center justify-center text-orange-600 dark:text-orange-300 group-hover:scale-110 transition"><i class="fas fa-cloud-download-alt text-2xl"></i></div>
+                            <span class="font-bold text-orange-700 dark:text-orange-300" x-text="t('loadCloud')"></span>
+                            <span class="text-xs text-orange-500 dark:text-orange-400">Cloud -> Local</span>
+                        </button>
+                    </div>
+                    <div x-show="fbLoading" class="text-center text-sm text-indigo-400 animate-pulse mt-2">Synchronisation en cours...</div>
+                </div>
+            </div>
         </div>
 
         <!-- DASHBOARD -->
