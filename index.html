@@ -3,14 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Station V8.1 - Fixed</title>
+    <title>Crypto Station V8.6 - Fixed</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <script>
-        tailwind.config = { darkMode: 'class' };
+        // Sécurité pour Tailwind
+        if (typeof tailwind !== 'undefined') {
+            tailwind.config = { darkMode: 'class' };
+        } else {
+            window.addEventListener('load', function() {
+                if (typeof tailwind !== 'undefined') tailwind.config = { darkMode: 'class' };
+            });
+        }
     </script>
 
     <style>
@@ -26,6 +33,9 @@
         .tab-active { border-bottom: 2px solid #6366f1; color: #6366f1; font-weight: bold; }
         .tab-inactive { color: #9ca3af; border-bottom: 2px solid transparent; }
         .dark .tab-active { color: #fff; border-color: #6366f1; }
+        
+        /* Animation barre de progression */
+        .progress-bar { transition: width 1s ease-in-out; }
     </style>
 
     <script>
@@ -41,11 +51,15 @@
                 importSuccess: "Succès !", importError: "Erreur fichier.",
                 welcomeShare: "App locale & sécurisée. Vos données restent sur cet appareil.",
                 resetApp: "Tout Effacer", demoMode: "Charger Démo", dcaTool: "Simulateur DCA",
-                dcaTitle: "Simulateur de Moyenne à la baisse (DCA)", currentAvg: "Prix Moyen Actuel",
+                dcaTitle: "Simulateur de Moyenne (DCA)", currentAvg: "Prix Moyen Actuel",
                 newBuy: "Nouvel Achat", newAvg: "Nouveau Prix Moyen", simulate: "Simuler",
                 chartRange: "Période :", cancel: "Annuler", confirmAction: "Oui, continuer",
                 resetTitle: "Réinitialisation", resetMsg: "Attention: Cela va effacer toutes vos données définitivement. Êtes-vous sûr ?",
-                demoTitle: "Mode Démo", demoMsg: "Cela va remplacer vos données actuelles par des données de test. Continuer ?"
+                demoTitle: "Mode Démo", demoMsg: "Cela va remplacer vos données actuelles par des données de test. Continuer ?",
+                simPrice: "Prix d'achat simulé",
+                goalTitle: "Objectif Global", setGoal: "Définir votre objectif ($/€) :",
+                currencySwitch: "Devise",
+                statusOnline: "En ligne", statusSync: "Sync...", statusError: "Erreur API (Cache)"
             },
             en: {
                 dashboard: "Dashboard", analytics: "Analytics", settings: "Settings",
@@ -58,11 +72,15 @@
                 importSuccess: "Success!", importError: "File error.",
                 welcomeShare: "Local & secure app. Data stays on this device.",
                 resetApp: "Wipe All Data", demoMode: "Load Demo Data", dcaTool: "DCA Simulator",
-                dcaTitle: "DCA Simulator (Average Down)", currentAvg: "Current Avg Price",
+                dcaTitle: "DCA Simulator (Average)", currentAvg: "Current Avg Price",
                 newBuy: "New Buy", newAvg: "New Avg Price", simulate: "Simulate",
                 chartRange: "Range:", cancel: "Cancel", confirmAction: "Yes, continue",
                 resetTitle: "Factory Reset", resetMsg: "Warning: This will wipe all data permanently. Are you sure?",
-                demoTitle: "Demo Mode", demoMsg: "This will replace current data with test data. Continue?"
+                demoTitle: "Demo Mode", demoMsg: "This will replace current data with test data. Continue?",
+                simPrice: "Simulated Buy Price",
+                goalTitle: "Global Goal", setGoal: "Set your goal ($/€):",
+                currencySwitch: "Currency",
+                statusOnline: "Online", statusSync: "Sync...", statusError: "API Error (Cached)"
             }
         };
 
@@ -95,22 +113,26 @@
                 chartRange: 'all',
                 darkMode: localStorage.getItem('theme') !== 'light',
                 
-                // Confirm Modal State
                 confirmModal: { open: false, title: '', message: '', onConfirm: () => {} },
 
                 transactions: JSON.parse(localStorage.getItem('txs') || '[]') || [],
-                settings: JSON.parse(localStorage.getItem('settings') || '{"currency":"USD", "lang":"fr"}'),
+                settings: JSON.parse(localStorage.getItem('settings') || '{"currency":"USD", "lang":"fr", "goal": 1000}'),
                 history: JSON.parse(localStorage.getItem('history') || '[]') || [], 
 
-                prices: {},
+                // Prices now loaded from cache if available to prevent blank screens
+                prices: JSON.parse(localStorage.getItem('cached_prices') || '{}'),
+                
+                // --- CORRECTION: Ajout de assets ici ---
                 assets: ASSETS_CONFIG,
+                
                 loading: false,
+                apiError: false,
                 privacy: false,
                 chartPie: null,
                 chartLine: null,
 
                 form: { symbol: 'BNB', date: new Date().toISOString().split('T')[0], amount: '', qty: '', wallet: 'spot' },
-                dcaForm: { symbol: 'BTC', currentPrice: 0, newAmount: 100 },
+                dcaForm: { symbol: 'BTC', currentPrice: '', newAmount: 100 },
                 
                 volatility: 0, projection: 0, riskLevel: 'Low',
 
@@ -118,37 +140,26 @@
                     if(!this.darkMode) document.documentElement.classList.remove('dark');
                     if (!this.savedPin) this.locked = true; 
                     
+                    if(!this.settings.goal) this.settings.goal = 1000;
+
                     this.fetchData();
-                    setInterval(() => this.fetchData(), 60000);
-                    this.takeSnapshot();
+                    setInterval(() => this.fetchData(), 120000); // 2 mins interval to avoid rate limit
+                    
+                    // Initial chart draw with cached data
+                    setTimeout(() => {
+                        this.takeSnapshot(); 
+                        this.updateCharts();
+                    }, 500);
 
                     this.$watch('transactions', () => { this.save(); this.updateCharts(); });
                     this.$watch('settings', () => { localStorage.setItem('settings', JSON.stringify(this.settings)); });
+                    // Cache prices when they update
+                    this.$watch('prices', () => { localStorage.setItem('cached_prices', JSON.stringify(this.prices)); });
                 },
 
                 t(key) {
                     const lang = (this.settings && this.settings.lang) ? this.settings.lang : 'fr';
                     return (I18N[lang] && I18N[lang][key]) ? I18N[lang][key] : key;
-                },
-
-                // --- CONFIRMATION MODAL SYSTEM ---
-                askConfirm(titleKey, messageKey, callback) {
-                    this.confirmModal.title = this.t(titleKey);
-                    this.confirmModal.message = this.t(messageKey);
-                    this.confirmModal.onConfirm = callback;
-                    this.confirmModal.open = true;
-                },
-
-                triggerReset() {
-                    this.askConfirm('resetTitle', 'resetMsg', () => {
-                        this.resetApp();
-                    });
-                },
-
-                triggerDemo() {
-                    this.askConfirm('demoTitle', 'demoMsg', () => {
-                        this.loadDemo();
-                    });
                 },
 
                 // --- FEATURES ---
@@ -160,6 +171,34 @@
                     this.updateCharts();
                 },
 
+                toggleCurrency() {
+                    this.settings.currency = this.settings.currency === 'USD' ? 'EUR' : 'USD';
+                    this.fetchData();
+                },
+
+                editGoal() {
+                    const newGoal = prompt(this.t('setGoal'), this.settings.goal);
+                    if(newGoal && !isNaN(newGoal)) {
+                        this.settings.goal = parseFloat(newGoal);
+                    }
+                },
+
+                get progressPercent() {
+                    if(!this.settings.goal || this.settings.goal === 0) return 0;
+                    let pct = (this.totalVal / this.settings.goal) * 100;
+                    return Math.min(pct, 100);
+                },
+
+                // --- MODALS ---
+                askConfirm(titleKey, messageKey, callback) {
+                    this.confirmModal.title = this.t(titleKey);
+                    this.confirmModal.message = this.t(messageKey);
+                    this.confirmModal.onConfirm = callback;
+                    this.confirmModal.open = true;
+                },
+                triggerReset() { this.askConfirm('resetTitle', 'resetMsg', () => { this.resetApp(); }); },
+                triggerDemo() { this.askConfirm('demoTitle', 'demoMsg', () => { this.loadDemo(); }); },
+                
                 loadDemo() {
                     const today = new Date().toISOString().split('T')[0];
                     this.transactions = [
@@ -171,81 +210,78 @@
                     this.history = [];
                     for(let i=30; i>=0; i--) {
                         let d = new Date(); d.setDate(d.getDate() - i);
-                        this.history.push({
-                            date: d.toISOString().split('T')[0],
-                            value: 1000 + Math.random() * 200 + (30-i)*10,
-                            invested: 950 + (30-i)*5
-                        });
+                        this.history.push({ date: d.toISOString().split('T')[0], value: 1000 + Math.random() * 200 + (30-i)*10, invested: 950 + (30-i)*5 });
                     }
                     this.save();
                     localStorage.setItem('history', JSON.stringify(this.history));
                     this.updateCharts();
                     this.showSettings = false;
                 },
-
                 resetApp() {
-                    // Nettoyage complet
                     localStorage.clear();
-                    
-                    // Reset variables
-                    this.transactions = [];
-                    this.history = [];
-                    this.settings = { currency: "USD", lang: "fr" };
-                    this.savedPin = null;
-                    this.pinInput = '';
-                    
-                    // Reset charts
+                    this.transactions = []; this.history = [];
+                    this.settings = { currency: "USD", lang: "fr", goal: 1000 };
+                    this.savedPin = null; this.pinInput = '';
                     if(this.chartPie) { this.chartPie.destroy(); this.chartPie = null; }
                     if(this.chartLine) { this.chartLine.destroy(); this.chartLine = null; }
-                    
-                    // Verrouiller pour forcer la création d'un nouveau PIN
-                    this.locked = true;
-                    this.showSettings = false;
+                    this.locked = true; this.showSettings = false;
                 },
-
                 get dcaSimulation() {
-                    const asset = this.portfolio.find(a => a.symbol === this.dcaForm.symbol);
-                    const currentAvg = asset ? asset.totalInvested / asset.totalQty : 0;
-                    const curPrice = this.dcaForm.currentPrice || (asset ? asset.currentPrice : 0);
-                    const newInv = parseFloat(this.dcaForm.newAmount) || 0;
-                    const newQty = curPrice > 0 ? newInv / curPrice : 0;
-                    const totalInv = (asset ? asset.totalInvested : 0) + newInv;
-                    const totalQty = (asset ? asset.totalQty : 0) + newQty;
-                    const newAvg = totalQty > 0 ? totalInv / totalQty : 0;
-                    return { currentAvg, newAvg, currentPrice: curPrice };
-                },
+                    // Check if assets loaded to avoid undefined errors
+                    if (!this.assets || this.assets.length === 0) return { currentAvg: 0, newAvg: 0, currentPrice: 0, simPrice: 0, changePct: 0, owned: false };
 
+                    const portfolioAsset = this.portfolio ? this.portfolio.find(a => a.symbol === this.dcaForm.symbol) : null;
+                    const assetConfig = this.assets.find(a => a.symbol === this.dcaForm.symbol);
+                    const curCode = this.settings.currency ? this.settings.currency.toLowerCase() : 'usd';
+                    
+                    const livePrice = (this.prices && this.prices[assetConfig?.id] && this.prices[assetConfig.id][curCode]) || 0;
+                    const simPrice = this.dcaForm.currentPrice && parseFloat(this.dcaForm.currentPrice) > 0 ? parseFloat(this.dcaForm.currentPrice) : livePrice;
+                    
+                    const currentInvested = portfolioAsset ? portfolioAsset.totalInvested : 0;
+                    const currentQty = portfolioAsset ? portfolioAsset.totalQty : 0;
+                    const currentAvg = currentQty > 0 ? currentInvested / currentQty : 0;
+                    
+                    const newInvested = parseFloat(this.dcaForm.newAmount) || 0;
+                    const newQty = simPrice > 0 ? newInvested / simPrice : 0;
+                    
+                    const finalInvested = currentInvested + newInvested;
+                    const finalQty = currentQty + newQty;
+                    const newAvg = finalQty > 0 ? finalInvested / finalQty : 0;
+                    
+                    let changePct = 0;
+                    if(currentAvg > 0) changePct = ((newAvg - currentAvg) / currentAvg) * 100;
+                    
+                    return { currentAvg, newAvg, currentPrice: livePrice, simPrice: simPrice, changePct: changePct, owned: !!portfolioAsset };
+                },
                 unlockApp() {
                     if (!this.savedPin) {
                         if (this.pinInput.length >= 4) {
-                            localStorage.setItem('user_pin', this.pinInput);
-                            this.savedPin = this.pinInput;
-                            this.locked = false;
-                            this.pinInput = '';
+                            localStorage.setItem('user_pin', this.pinInput); this.savedPin = this.pinInput; this.locked = false; this.pinInput = '';
                         }
                     } else {
-                        if (this.pinInput === this.savedPin) {
-                            this.locked = false;
-                            this.pinInput = '';
-                            setTimeout(() => this.updateCharts(), 500);
+                        if (this.pinInput === this.savedPin) { this.locked = false; this.pinInput = ''; setTimeout(() => this.updateCharts(), 500);
                         } else { alert('PIN Incorrect'); this.pinInput = ''; }
                     }
                 },
-
                 async fetchData() {
+                    // Check if assets exists
+                    if (!this.assets) return;
+                    
                     this.loading = true;
+                    this.apiError = false;
                     const ids = this.assets.map(a => a.id).join(',');
                     try {
                         const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur&include_24hr_change=true`);
-                        if (!res.ok) throw new Error();
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
                         this.prices = await res.json();
-                        this.takeSnapshot();
-                        this.calculateMetrics();
-                        this.updateCharts();
-                    } catch (e) { console.error("API Error"); } 
+                        this.takeSnapshot(); this.calculateMetrics(); this.updateCharts();
+                    } catch (e) { 
+                        console.warn("API Error (using cache if available):", e); 
+                        this.apiError = true;
+                        // On error, we rely on cached prices loaded in init
+                    } 
                     finally { this.loading = false; }
                 },
-
                 takeSnapshot() {
                     if (this.totalVal === 0) return;
                     if (!this.history) this.history = [];
@@ -257,7 +293,6 @@
                     if (this.history.length > 365) this.history.shift();
                     localStorage.setItem('history', JSON.stringify(this.history));
                 },
-
                 calculateMetrics() {
                     if (!this.history || this.history.length < 2) return;
                     const recent = this.history.slice(-7);
@@ -280,17 +315,14 @@
                     const intercept = (sumY - slope * sumX) / n;
                     this.projection = slope * (n + 7) + intercept;
                 },
-
                 exportCSV() {
                     let csv = "Date,Type,Wallet,Crypto,Montant,Quantite\n";
                     if (this.transactions) this.transactions.forEach(t => csv += `${t.date},BUY,${t.wallet},${t.symbol},${t.amount},${t.qty}\n`);
-                    const blob = new Blob([csv], { type: 'text/csv' });
-                    this.downloadFile(blob, `crypto_export_${new Date().toISOString().slice(0,10)}.csv`);
+                    const blob = new Blob([csv], { type: 'text/csv' }); this.downloadFile(blob, `crypto_export_${new Date().toISOString().slice(0,10)}.csv`);
                 },
                 exportJSON() {
                     const data = { transactions: this.transactions, history: this.history, settings: this.settings };
-                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-                    this.downloadFile(blob, `crypto_full_backup.json`);
+                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' }); this.downloadFile(blob, `crypto_full_backup.json`);
                 },
                 downloadFile(blob, filename) {
                     const url = window.URL.createObjectURL(blob);
@@ -298,8 +330,7 @@
                 },
                 triggerImport() { document.getElementById('jsonInput').click(); },
                 handleImport(e) {
-                    const file = e.target.files[0];
-                    if (!file) return;
+                    const file = e.target.files[0]; if (!file) return;
                     const reader = new FileReader();
                     reader.onload = (event) => {
                         try {
@@ -312,16 +343,17 @@
                             localStorage.setItem('settings', JSON.stringify(this.settings));
                             alert(this.t('importSuccess')); location.reload();
                         } catch (err) { alert(this.t('importError')); }
-                    };
-                    reader.readAsText(file);
+                    }; reader.readAsText(file);
                 },
-
                 get portfolio() {
                     if (!this.settings || !this.settings.currency) return [];
                     const cur = this.settings.currency.toLowerCase();
                     let relevantTxs = this.transactions || [];
                     if (this.filterWallet !== 'all') relevantTxs = relevantTxs.filter(t => t.wallet === this.filterWallet);
+                    
+                    // SAFEGUARD: Check assets exists
                     if (!this.assets) return [];
+                    
                     return this.assets.map(asset => {
                         const txs = relevantTxs.filter(t => t.symbol === asset.symbol);
                         if (txs.length === 0) return null;
@@ -334,11 +366,16 @@
                         };
                     }).filter(x => x);
                 },
-                get totalVal() { return this.portfolio.reduce((sum, i) => sum + i.currentValue, 0); },
-                get totalInv() { return this.portfolio.reduce((sum, i) => sum + i.totalInvested, 0); },
+                get totalVal() { 
+                    if (!this.portfolio) return 0;
+                    return this.portfolio.reduce((sum, i) => sum + i.currentValue, 0); 
+                },
+                get totalInv() { 
+                    if (!this.portfolio) return 0;
+                    return this.portfolio.reduce((sum, i) => sum + i.totalInvested, 0); 
+                },
                 get totalPnL() { return this.totalVal - this.totalInv; },
                 get totalROI() { return this.totalInv > 0 ? (this.totalPnL / this.totalInv) * 100 : 0; },
-
                 formatMoney(val) {
                     if (this.privacy) return '****';
                     const s = (this.settings && this.settings.currency === 'USD') ? '$' : '€';
@@ -353,13 +390,11 @@
                 },
                 delTx(id) { if(confirm('Supprimer?')) this.transactions = this.transactions.filter(t => t.id !== id); },
                 save() { localStorage.setItem('txs', JSON.stringify(this.transactions)); },
-                
                 updateCharts() {
                     if (!this.portfolio || !this.portfolio.length) return;
                     const isDark = this.darkMode;
                     const gridColor = isDark ? '#374151' : '#e5e7eb';
                     const textColor = isDark ? '#9ca3af' : '#4b5563';
-
                     const ctxPie = document.getElementById('chartPie');
                     if (ctxPie && this.portfolio.length > 0) {
                         if (this.chartPie) this.chartPie.destroy();
@@ -369,7 +404,6 @@
                             options: { responsive: true, plugins: { legend: { display: false } } }
                         });
                     }
-                    
                     const ctxLine = document.getElementById('chartLine');
                     if (ctxLine && this.history && this.history.length > 0) {
                         if (this.chartLine) this.chartLine.destroy();
@@ -378,7 +412,6 @@
                         if(this.chartRange === '7d') data = data.filter(h => new Date(h.date) >= new Date(now - 7*24*60*60*1000));
                         if(this.chartRange === '1m') data = data.filter(h => new Date(h.date) >= new Date(now - 30*24*60*60*1000));
                         if(this.chartRange === '3m') data = data.filter(h => new Date(h.date) >= new Date(now - 90*24*60*60*1000));
-
                         this.chartLine = new Chart(ctxLine, {
                             type: 'line',
                             data: {
@@ -388,11 +421,7 @@
                                     borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', fill: true, tension: 0.3 
                                 }]
                             },
-                            options: { 
-                                responsive: true, 
-                                scales: { x: { display: false }, y: { grid: { color: gridColor }, ticks: { color: textColor } } },
-                                plugins: { legend: { labels: { color: textColor } } }
-                            }
+                            options: { responsive: true, scales: { x: { display: false }, y: { grid: { color: gridColor }, ticks: { color: textColor } } }, plugins: { legend: { labels: { color: textColor } } } }
                         });
                     }
                 }
@@ -403,7 +432,7 @@
 
 <body class="bg-gray-100 text-gray-800 dark:bg-slate-900 dark:text-gray-200 transition-colors duration-300 overflow-x-hidden" x-data="cryptoApp()" x-init="init()">
 
-    <!-- CONFIRMATION MODAL (REMPLACE ALERT/CONFIRM) -->
+    <!-- CONFIRMATION MODAL -->
     <div x-show="confirmModal.open" x-cloak class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
         <div class="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-gray-200 dark:border-slate-700 transform scale-100 transition-transform">
             <h3 class="text-lg font-bold mb-2 dark:text-white" x-text="confirmModal.title"></h3>
@@ -434,14 +463,17 @@
             <div class="flex items-center gap-4 mb-4 md:mb-0">
                 <div class="bg-indigo-600 p-3 rounded-lg text-white"><i class="fas fa-rocket text-xl"></i></div>
                 <div>
-                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V8.1</h1>
+                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V8.6</h1>
                     <div class="flex items-center text-xs text-gray-500 dark:text-slate-400">
-                        <span class="w-2 h-2 rounded-full mr-2" :class="loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'"></span>
-                        <span x-text="loading ? 'Sync...' : 'Ultimate Edition'"></span>
+                        <span class="w-2 h-2 rounded-full mr-2" :class="apiError ? 'bg-red-500' : (loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400')"></span>
+                        <span x-text="apiError ? t('statusError') : (loading ? t('statusSync') : t('statusOnline'))"></span>
                     </div>
                 </div>
             </div>
             <div class="flex gap-2">
+                <!-- Bouton Devise -->
+                <button @click="toggleCurrency()" class="px-3 py-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition text-sm font-bold text-indigo-600 dark:text-indigo-400" x-text="settings.currency"></button>
+                
                 <button @click="toggleTheme()" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas" :class="darkMode ? 'fa-sun text-yellow-400' : 'fa-moon text-gray-600'"></i></button>
                 <button @click="showSettings = !showSettings" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas fa-cog text-gray-600 dark:text-gray-300"></i></button>
                 <button @click="togglePriv()" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas text-gray-600 dark:text-gray-300" :class="privacy ? 'fa-eye-slash' : 'fa-eye'"></i></button>
@@ -458,7 +490,6 @@
                         <button @click="toggleLang()" class="px-4 py-2 bg-gray-100 dark:bg-slate-700 rounded text-sm font-bold uppercase" x-text="settings.lang"></button>
                     </div>
                     <div class="flex gap-2">
-                        <!-- BOUTONS AVEC CONFIRMATION MODALE -->
                         <button @click="triggerReset()" class="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 rounded text-xs font-bold uppercase hover:opacity-80" x-text="t('resetApp')"></button>
                         <button @click="triggerDemo()" class="px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900 rounded text-xs font-bold uppercase hover:opacity-80" x-text="t('demoMode')"></button>
                     </div>
@@ -491,6 +522,23 @@
 
         <!-- DASHBOARD -->
         <div x-show="tab === 'dashboard'" x-cloak class="fade-in">
+            
+            <!-- GOAL PROGRESS BAR (NOUVEAU) -->
+            <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 shadow-md mb-6">
+                <div class="flex justify-between items-end mb-2">
+                    <span class="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase" x-text="t('goalTitle')"></span>
+                    <div class="text-sm cursor-pointer hover:text-indigo-500 dark:text-slate-300 dark:hover:text-indigo-400 transition" @click="editGoal()">
+                        <span x-text="formatMoney(totalVal)"></span> / <span x-text="formatMoney(settings.goal)"></span>
+                        <i class="fas fa-pen ml-1 text-xs opacity-50"></i>
+                    </div>
+                </div>
+                <div class="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                    <div class="bg-indigo-600 h-2.5 rounded-full progress-bar shadow-[0_0_10px_rgba(99,102,241,0.5)]" 
+                         :style="'width: ' + progressPercent + '%'"></div>
+                </div>
+                <div class="text-right text-xs text-indigo-600 dark:text-indigo-400 mt-1 font-bold" x-text="progressPercent.toFixed(1) + '%'"></div>
+            </div>
+
             <!-- KPIs -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                 <div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-gray-200 dark:border-slate-700 shadow-md relative overflow-hidden">
@@ -531,18 +579,29 @@
                         <select x-model="dcaForm.symbol" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm w-32 dark:text-white"><template x-for="a in assets"><option :value="a.symbol" x-text="a.symbol"></option></template></select>
                     </div>
                     <div>
+                        <label class="text-xs text-gray-500 dark:text-slate-400" x-text="t('simPrice') + ' ($)'"></label>
+                        <input type="number" x-model="dcaForm.currentPrice" :placeholder="formatMoney(dcaSimulation.currentPrice)" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm w-32 dark:text-white">
+                    </div>
+                    <div>
                         <label class="text-xs text-gray-500 dark:text-slate-400" x-text="t('newBuy') + ' ($)'"></label>
                         <input type="number" x-model="dcaForm.newAmount" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm w-32 dark:text-white">
                     </div>
-                    <div class="flex-1 flex gap-4 text-sm bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700">
-                        <div>
+                    <div class="flex-1 flex gap-4 text-sm bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 items-center">
+                        <div :class="{'opacity-50': !dcaSimulation.owned}">
                             <div class="text-xs text-gray-400" x-text="t('currentAvg')"></div>
-                            <div class="font-bold dark:text-white" x-text="formatMoney(dcaSimulation.currentAvg)"></div>
+                            <div class="font-bold dark:text-white" x-text="dcaSimulation.owned ? formatMoney(dcaSimulation.currentAvg) : '-'"></div>
                         </div>
-                        <div class="text-gray-400"><i class="fas fa-arrow-right mt-2"></i></div>
+                        <div class="text-gray-400"><i class="fas fa-arrow-right"></i></div>
                         <div>
                             <div class="text-xs text-indigo-500" x-text="t('newAvg')"></div>
-                            <div class="font-bold text-indigo-600 dark:text-indigo-400" x-text="formatMoney(dcaSimulation.newAvg)"></div>
+                            <div class="flex items-center gap-2">
+                                <div class="font-bold text-indigo-600 dark:text-indigo-400" x-text="formatMoney(dcaSimulation.newAvg)"></div>
+                                <div class="text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-slate-700" 
+                                     :class="dcaSimulation.changePct < 0 ? 'text-green-500' : 'text-red-500'" 
+                                     x-show="dcaSimulation.owned && dcaSimulation.changePct !== 0"
+                                     x-text="(dcaSimulation.changePct > 0 ? '+' : '') + dcaSimulation.changePct.toFixed(2) + '%'">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
