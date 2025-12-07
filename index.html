@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Station V11.2 - Cloud Fixed</title>
+    <title>Crypto Station V12 - Google Login</title>
     
     <!-- UI & Logic -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -80,6 +80,7 @@
                 pasteConfig: "Configuration Firebase détectée :",
                 initFirebase: "Initialiser Connexion",
                 login: "Se connecter", register: "Créer un compte", email: "Email", password: "Mot de passe",
+                loginGoogle: "Continuer avec Google",
                 loggedInAs: "Connecté en tant que :", logout: "Déconnexion",
                 syncNow: "Sauvegarder dans le Cloud", loadCloud: "Télécharger du Cloud",
                 cloudSuccess: "Synchronisation réussie !", cloudError: "Erreur Cloud.",
@@ -111,6 +112,7 @@
                 pasteConfig: "Firebase Configuration Detected:",
                 initFirebase: "Initialize Connection",
                 login: "Login", register: "Register", email: "Email", password: "Password",
+                loginGoogle: "Continue with Google",
                 loggedInAs: "Logged in as:", logout: "Logout",
                 syncNow: "Save to Cloud", loadCloud: "Load from Cloud",
                 cloudSuccess: "Sync successful!", cloudError: "Cloud error.",
@@ -205,18 +207,14 @@
                         let configStr = this.fbConfigInput.trim();
                         let config = null;
 
-                        // 1. Essayer le parsing JSON strict
                         try {
                             config = JSON.parse(configStr);
                         } catch (e) {
-                            // 2. Fallback: Parsing objet JS (pour le copier-coller de Firebase)
-                            // Utilisation de Function pour évaluer l'objet JS en toute sécurité (client-side)
                             if (configStr.includes('=')) {
                                 configStr = configStr.substring(configStr.indexOf('=') + 1).trim();
                             }
                             if (configStr.endsWith(';')) configStr = configStr.slice(0, -1);
                             
-                            // Reconstruction sécurisée
                             config = new Function('return ' + configStr)();
                         }
 
@@ -245,6 +243,15 @@
                     try {
                         await firebase.auth().signInWithEmailAndPassword(this.fbEmail, this.fbPass);
                     } catch (e) { alert("Erreur Login: " + e.message); }
+                },
+
+                // NOUVEAU: Google Login
+                async fbGoogleLogin() {
+                    if(!this.fbApp) return alert("Firebase non initialisé");
+                    try {
+                        const provider = new firebase.auth.GoogleAuthProvider();
+                        await firebase.auth().signInWithPopup(provider);
+                    } catch (e) { alert("Erreur Google Login: " + e.message); }
                 },
 
                 async fbRegister() {
@@ -592,7 +599,7 @@
             <div class="flex items-center gap-4 mb-4 md:mb-0">
                 <div class="bg-indigo-600 p-3 rounded-lg text-white"><i class="fas fa-rocket text-xl"></i></div>
                 <div>
-                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V11.2</h1>
+                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V12</h1>
                     <div class="flex items-center text-xs text-gray-500 dark:text-slate-400">
                         <span class="w-2 h-2 rounded-full mr-2" :class="apiError ? 'bg-red-500' : (loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400')"></span>
                         <span x-text="apiError ? t('statusError') : (loading ? t('statusSync') : t('statusOnline'))"></span>
@@ -673,6 +680,11 @@
                         <input type="email" x-model="fbEmail" :placeholder="t('email')" class="bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-2 text-sm dark:text-white">
                         <input type="password" x-model="fbPass" :placeholder="t('password')" class="bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-2 text-sm dark:text-white">
                     </div>
+                    
+                    <button @click="fbGoogleLogin()" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-2 rounded-lg flex items-center justify-center gap-2">
+                        <i class="fab fa-google"></i> <span x-text="t('loginGoogle')"></span>
+                    </button>
+
                     <div class="flex gap-4">
                         <button @click="fbLogin()" class="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded-lg" x-text="t('login')"></button>
                         <button @click="fbRegister()" class="flex-1 bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 rounded-lg" x-text="t('register')"></button>
