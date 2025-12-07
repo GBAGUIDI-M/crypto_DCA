@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Station V8.1 - Fixed</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; transition: background-color 0.3s, color 0.3s; }
+        [x-cloak] { display: none !important; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 4px; }
+        
+        .tab-active { border-bottom: 2px solid #6366f1; color: #6366f1; font-weight: bold; }
+        .tab-inactive { color: #9ca3af; border-bottom: 2px solid transparent; }
+        .dark .tab-active { color: #fff; border-color: #6366f1; }
+    </style>
+
+    <script>
+        const I18N = {
+            fr: {
+                dashboard: "Tableau de bord", analytics: "Analyses", settings: "Réglages",
+                netWorth: "Valeur Totale", invested: "Investi", pnl: "PnL (Latent)", perf: "Performance",
+                addTx: "Transaction", wallet: "Portefeuille", spot: "Spot", earn: "Earn", futures: "Futures",
+                date: "Date", crypto: "Crypto", amount: "Montant", qty: "Quantité", confirm: "Confirmer",
+                security: "Sécurité", enterPin: "Entrez PIN", unlock: "Déverrouiller", setPin: "Créer PIN",
+                exportCSV: "Export Excel (CSV)", exportJSON: "Sauvegarde (JSON)", importJSON: "Restaurer",
+                backupTitle: "Données", volatility: "Volatilité", projection: "Projection", risk: "Risque",
+                importSuccess: "Succès !", importError: "Erreur fichier.",
+                welcomeShare: "App locale & sécurisée. Vos données restent sur cet appareil.",
+                resetApp: "Tout Effacer", demoMode: "Charger Démo", dcaTool: "Simulateur DCA",
+                dcaTitle: "Simulateur de Moyenne à la baisse (DCA)", currentAvg: "Prix Moyen Actuel",
+                newBuy: "Nouvel Achat", newAvg: "Nouveau Prix Moyen", simulate: "Simuler",
+                chartRange: "Période :", cancel: "Annuler", confirmAction: "Oui, continuer",
+                resetTitle: "Réinitialisation", resetMsg: "Attention: Cela va effacer toutes vos données définitivement. Êtes-vous sûr ?",
+                demoTitle: "Mode Démo", demoMsg: "Cela va remplacer vos données actuelles par des données de test. Continuer ?"
+            },
+            en: {
+                dashboard: "Dashboard", analytics: "Analytics", settings: "Settings",
+                netWorth: "Net Worth", invested: "Invested", pnl: "Unrealized PnL", perf: "Performance",
+                addTx: "Transaction", wallet: "Wallet", spot: "Spot", earn: "Earn", futures: "Futures",
+                date: "Date", crypto: "Crypto", amount: "Amount", qty: "Quantity", confirm: "Confirm",
+                security: "Security", enterPin: "Enter PIN", unlock: "Unlock", setPin: "Set PIN",
+                exportCSV: "Export Excel (CSV)", exportJSON: "Backup (JSON)", importJSON: "Restore",
+                backupTitle: "Data", volatility: "Volatility", projection: "Projection", risk: "Risk",
+                importSuccess: "Success!", importError: "File error.",
+                welcomeShare: "Local & secure app. Data stays on this device.",
+                resetApp: "Wipe All Data", demoMode: "Load Demo Data", dcaTool: "DCA Simulator",
+                dcaTitle: "DCA Simulator (Average Down)", currentAvg: "Current Avg Price",
+                newBuy: "New Buy", newAvg: "New Avg Price", simulate: "Simulate",
+                chartRange: "Range:", cancel: "Cancel", confirmAction: "Yes, continue",
+                resetTitle: "Factory Reset", resetMsg: "Warning: This will wipe all data permanently. Are you sure?",
+                demoTitle: "Demo Mode", demoMsg: "This will replace current data with test data. Continue?"
+            }
+        };
+
+        const ASSETS_CONFIG = [
+            { symbol: 'BTC', name: 'Bitcoin', id: 'bitcoin', color: '#F7931A' },
+            { symbol: 'ETH', name: 'Ethereum', id: 'ethereum', color: '#627EEA' },
+            { symbol: 'BNB', name: 'Binance Coin', id: 'binancecoin', color: '#F3BA2F' },
+            { symbol: 'SOL', name: 'Solana', id: 'solana', color: '#14F195' },
+            { symbol: 'TON', name: 'Toncoin', id: 'the-open-network', color: '#0088CC' },
+            { symbol: 'ADA', name: 'Cardano', id: 'cardano', color: '#0033AD' },
+            { symbol: 'XRP', name: 'Ripple', id: 'ripple', color: '#23292F' },
+            { symbol: 'DOGE', name: 'Dogecoin', id: 'dogecoin', color: '#C2A633' },
+            { symbol: 'AVAX', name: 'Avalanche', id: 'avalanche-2', color: '#E84142' },
+            { symbol: 'DOT', name: 'Polkadot', id: 'polkadot', color: '#E6007A' },
+            { symbol: 'PEPE', name: 'Pepe', id: 'pepe', color: '#4CAF50' },
+            { symbol: 'LINK', name: 'Chainlink', id: 'chainlink', color: '#2A5ADA' }
+        ];
+
+        function cryptoApp() {
+            return {
+                // STATE
+                locked: true,
+                pinInput: '',
+                savedPin: localStorage.getItem('user_pin'),
+                
+                tab: 'dashboard',
+                filterWallet: 'all',
+                showSettings: false,
+                showDCA: false,
+                chartRange: 'all',
+                darkMode: localStorage.getItem('theme') !== 'light',
+                
+                // Confirm Modal State
+                confirmModal: { open: false, title: '', message: '', onConfirm: () => {} },
+
+                transactions: JSON.parse(localStorage.getItem('txs') || '[]') || [],
+                settings: JSON.parse(localStorage.getItem('settings') || '{"currency":"USD", "lang":"fr"}'),
+                history: JSON.parse(localStorage.getItem('history') || '[]') || [], 
+
+                prices: {},
+                assets: ASSETS_CONFIG,
+                loading: false,
+                privacy: false,
+                chartPie: null,
+                chartLine: null,
+
+                form: { symbol: 'BNB', date: new Date().toISOString().split('T')[0], amount: '', qty: '', wallet: 'spot' },
+                dcaForm: { symbol: 'BTC', currentPrice: 0, newAmount: 100 },
+                
+                volatility: 0, projection: 0, riskLevel: 'Low',
+
+                init() {
+                    if(!this.darkMode) document.documentElement.classList.remove('dark');
+                    if (!this.savedPin) this.locked = true; 
+                    
+                    this.fetchData();
+                    setInterval(() => this.fetchData(), 60000);
+                    this.takeSnapshot();
+
+                    this.$watch('transactions', () => { this.save(); this.updateCharts(); });
+                    this.$watch('settings', () => { localStorage.setItem('settings', JSON.stringify(this.settings)); });
+                },
+
+                t(key) {
+                    const lang = (this.settings && this.settings.lang) ? this.settings.lang : 'fr';
+                    return (I18N[lang] && I18N[lang][key]) ? I18N[lang][key] : key;
+                },
+
+                // --- CONFIRMATION MODAL SYSTEM ---
+                askConfirm(titleKey, messageKey, callback) {
+                    this.confirmModal.title = this.t(titleKey);
+                    this.confirmModal.message = this.t(messageKey);
+                    this.confirmModal.onConfirm = callback;
+                    this.confirmModal.open = true;
+                },
+
+                triggerReset() {
+                    this.askConfirm('resetTitle', 'resetMsg', () => {
+                        this.resetApp();
+                    });
+                },
+
+                triggerDemo() {
+                    this.askConfirm('demoTitle', 'demoMsg', () => {
+                        this.loadDemo();
+                    });
+                },
+
+                // --- FEATURES ---
+                toggleTheme() {
+                    this.darkMode = !this.darkMode;
+                    if(this.darkMode) document.documentElement.classList.add('dark');
+                    else document.documentElement.classList.remove('dark');
+                    localStorage.setItem('theme', this.darkMode ? 'dark' : 'light');
+                    this.updateCharts();
+                },
+
+                loadDemo() {
+                    const today = new Date().toISOString().split('T')[0];
+                    this.transactions = [
+                        {id: 1, symbol: 'BTC', date: '2024-01-01', amount: 500, qty: 0.012, wallet: 'spot'},
+                        {id: 2, symbol: 'ETH', date: '2024-02-15', amount: 300, qty: 0.12, wallet: 'spot'},
+                        {id: 3, symbol: 'SOL', date: '2024-03-10', amount: 150, qty: 1.5, wallet: 'earn'},
+                        {id: 4, symbol: 'BNB', date: today, amount: 100, qty: 0.18, wallet: 'spot'}
+                    ];
+                    this.history = [];
+                    for(let i=30; i>=0; i--) {
+                        let d = new Date(); d.setDate(d.getDate() - i);
+                        this.history.push({
+                            date: d.toISOString().split('T')[0],
+                            value: 1000 + Math.random() * 200 + (30-i)*10,
+                            invested: 950 + (30-i)*5
+                        });
+                    }
+                    this.save();
+                    localStorage.setItem('history', JSON.stringify(this.history));
+                    this.updateCharts();
+                    this.showSettings = false;
+                },
+
+                resetApp() {
+                    // Nettoyage complet
+                    localStorage.clear();
+                    
+                    // Reset variables
+                    this.transactions = [];
+                    this.history = [];
+                    this.settings = { currency: "USD", lang: "fr" };
+                    this.savedPin = null;
+                    this.pinInput = '';
+                    
+                    // Reset charts
+                    if(this.chartPie) { this.chartPie.destroy(); this.chartPie = null; }
+                    if(this.chartLine) { this.chartLine.destroy(); this.chartLine = null; }
+                    
+                    // Verrouiller pour forcer la création d'un nouveau PIN
+                    this.locked = true;
+                    this.showSettings = false;
+                },
+
+                get dcaSimulation() {
+                    const asset = this.portfolio.find(a => a.symbol === this.dcaForm.symbol);
+                    const currentAvg = asset ? asset.totalInvested / asset.totalQty : 0;
+                    const curPrice = this.dcaForm.currentPrice || (asset ? asset.currentPrice : 0);
+                    const newInv = parseFloat(this.dcaForm.newAmount) || 0;
+                    const newQty = curPrice > 0 ? newInv / curPrice : 0;
+                    const totalInv = (asset ? asset.totalInvested : 0) + newInv;
+                    const totalQty = (asset ? asset.totalQty : 0) + newQty;
+                    const newAvg = totalQty > 0 ? totalInv / totalQty : 0;
+                    return { currentAvg, newAvg, currentPrice: curPrice };
+                },
+
+                unlockApp() {
+                    if (!this.savedPin) {
+                        if (this.pinInput.length >= 4) {
+                            localStorage.setItem('user_pin', this.pinInput);
+                            this.savedPin = this.pinInput;
+                            this.locked = false;
+                            this.pinInput = '';
+                        }
+                    } else {
+                        if (this.pinInput === this.savedPin) {
+                            this.locked = false;
+                            this.pinInput = '';
+                            setTimeout(() => this.updateCharts(), 500);
+                        } else { alert('PIN Incorrect'); this.pinInput = ''; }
+                    }
+                },
+
+                async fetchData() {
+                    this.loading = true;
+                    const ids = this.assets.map(a => a.id).join(',');
+                    try {
+                        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur&include_24hr_change=true`);
+                        if (!res.ok) throw new Error();
+                        this.prices = await res.json();
+                        this.takeSnapshot();
+                        this.calculateMetrics();
+                        this.updateCharts();
+                    } catch (e) { console.error("API Error"); } 
+                    finally { this.loading = false; }
+                },
+
+                takeSnapshot() {
+                    if (this.totalVal === 0) return;
+                    if (!this.history) this.history = [];
+                    const today = new Date().toISOString().split('T')[0];
+                    const existingIndex = this.history.findIndex(h => h.date === today);
+                    const snapshot = { date: today, value: this.totalVal, invested: this.totalInv };
+                    if (existingIndex >= 0) this.history[existingIndex] = snapshot;
+                    else this.history.push(snapshot);
+                    if (this.history.length > 365) this.history.shift();
+                    localStorage.setItem('history', JSON.stringify(this.history));
+                },
+
+                calculateMetrics() {
+                    if (!this.history || this.history.length < 2) return;
+                    const recent = this.history.slice(-7);
+                    if (recent.length > 1) {
+                        let changes = [];
+                        for(let i=1; i<recent.length; i++) changes.push((recent[i].value - recent[i-1].value) / recent[i-1].value);
+                        const mean = changes.reduce((a,b)=>a+b,0) / changes.length;
+                        const variance = changes.reduce((a,b)=>a + Math.pow(b-mean, 2), 0) / changes.length;
+                        this.volatility = Math.sqrt(variance) * 100;
+                        this.riskLevel = this.volatility < 1 ? 'Stable' : (this.volatility < 3 ? 'Modéré' : 'High');
+                    }
+                    const n = this.history.length;
+                    const x = Array.from({length: n}, (_, i) => i);
+                    const y = this.history.map(h => h.value);
+                    const sumX = x.reduce((a,b)=>a+b,0);
+                    const sumY = y.reduce((a,b)=>a+b,0);
+                    const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+                    const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+                    const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+                    const intercept = (sumY - slope * sumX) / n;
+                    this.projection = slope * (n + 7) + intercept;
+                },
+
+                exportCSV() {
+                    let csv = "Date,Type,Wallet,Crypto,Montant,Quantite\n";
+                    if (this.transactions) this.transactions.forEach(t => csv += `${t.date},BUY,${t.wallet},${t.symbol},${t.amount},${t.qty}\n`);
+                    const blob = new Blob([csv], { type: 'text/csv' });
+                    this.downloadFile(blob, `crypto_export_${new Date().toISOString().slice(0,10)}.csv`);
+                },
+                exportJSON() {
+                    const data = { transactions: this.transactions, history: this.history, settings: this.settings };
+                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                    this.downloadFile(blob, `crypto_full_backup.json`);
+                },
+                downloadFile(blob, filename) {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+                },
+                triggerImport() { document.getElementById('jsonInput').click(); },
+                handleImport(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const data = JSON.parse(event.target.result);
+                            if (data.transactions) this.transactions = data.transactions;
+                            if (data.history) this.history = data.history;
+                            if (data.settings) this.settings = data.settings;
+                            this.save();
+                            localStorage.setItem('history', JSON.stringify(this.history));
+                            localStorage.setItem('settings', JSON.stringify(this.settings));
+                            alert(this.t('importSuccess')); location.reload();
+                        } catch (err) { alert(this.t('importError')); }
+                    };
+                    reader.readAsText(file);
+                },
+
+                get portfolio() {
+                    if (!this.settings || !this.settings.currency) return [];
+                    const cur = this.settings.currency.toLowerCase();
+                    let relevantTxs = this.transactions || [];
+                    if (this.filterWallet !== 'all') relevantTxs = relevantTxs.filter(t => t.wallet === this.filterWallet);
+                    if (!this.assets) return [];
+                    return this.assets.map(asset => {
+                        const txs = relevantTxs.filter(t => t.symbol === asset.symbol);
+                        if (txs.length === 0) return null;
+                        const totalQty = txs.reduce((sum, t) => sum + parseFloat(t.qty), 0);
+                        const totalInvested = txs.reduce((sum, t) => sum + parseFloat(t.amount), 0);
+                        const price = (this.prices && this.prices[asset.id] && this.prices[asset.id][cur]) ? this.prices[asset.id][cur] : 0;
+                        const value = totalQty * price;
+                        return { ...asset, totalQty, totalInvested, currentPrice: price, currentValue: value, 
+                            pnl: value - totalInvested, roi: totalInvested > 0 ? ((value - totalInvested)/totalInvested)*100 : 0 
+                        };
+                    }).filter(x => x);
+                },
+                get totalVal() { return this.portfolio.reduce((sum, i) => sum + i.currentValue, 0); },
+                get totalInv() { return this.portfolio.reduce((sum, i) => sum + i.totalInvested, 0); },
+                get totalPnL() { return this.totalVal - this.totalInv; },
+                get totalROI() { return this.totalInv > 0 ? (this.totalPnL / this.totalInv) * 100 : 0; },
+
+                formatMoney(val) {
+                    if (this.privacy) return '****';
+                    const s = (this.settings && this.settings.currency === 'USD') ? '$' : '€';
+                    return s + (val || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                },
+                togglePriv() { this.privacy = !this.privacy; },
+                toggleLang() { if(this.settings) this.settings.lang = this.settings.lang === 'fr' ? 'en' : 'fr'; },
+                addTx() { 
+                    if (!this.transactions) this.transactions = [];
+                    this.transactions.push({ id: Date.now(), ...this.form, amount: parseFloat(this.form.amount), qty: parseFloat(this.form.qty) }); 
+                    this.form.amount=''; 
+                },
+                delTx(id) { if(confirm('Supprimer?')) this.transactions = this.transactions.filter(t => t.id !== id); },
+                save() { localStorage.setItem('txs', JSON.stringify(this.transactions)); },
+                
+                updateCharts() {
+                    if (!this.portfolio || !this.portfolio.length) return;
+                    const isDark = this.darkMode;
+                    const gridColor = isDark ? '#374151' : '#e5e7eb';
+                    const textColor = isDark ? '#9ca3af' : '#4b5563';
+
+                    const ctxPie = document.getElementById('chartPie');
+                    if (ctxPie && this.portfolio.length > 0) {
+                        if (this.chartPie) this.chartPie.destroy();
+                        this.chartPie = new Chart(ctxPie, {
+                            type: 'doughnut',
+                            data: { labels: this.portfolio.map(d => d.symbol), datasets: [{ data: this.portfolio.map(d => d.currentValue), backgroundColor: this.portfolio.map(d => d.color), borderWidth: 0 }] },
+                            options: { responsive: true, plugins: { legend: { display: false } } }
+                        });
+                    }
+                    
+                    const ctxLine = document.getElementById('chartLine');
+                    if (ctxLine && this.history && this.history.length > 0) {
+                        if (this.chartLine) this.chartLine.destroy();
+                        let data = this.history;
+                        const now = new Date();
+                        if(this.chartRange === '7d') data = data.filter(h => new Date(h.date) >= new Date(now - 7*24*60*60*1000));
+                        if(this.chartRange === '1m') data = data.filter(h => new Date(h.date) >= new Date(now - 30*24*60*60*1000));
+                        if(this.chartRange === '3m') data = data.filter(h => new Date(h.date) >= new Date(now - 90*24*60*60*1000));
+
+                        this.chartLine = new Chart(ctxLine, {
+                            type: 'line',
+                            data: {
+                                labels: data.map(h => h.date),
+                                datasets: [{ 
+                                    label: 'Valeur', data: data.map(h => h.value), 
+                                    borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', fill: true, tension: 0.3 
+                                }]
+                            },
+                            options: { 
+                                responsive: true, 
+                                scales: { x: { display: false }, y: { grid: { color: gridColor }, ticks: { color: textColor } } },
+                                plugins: { legend: { labels: { color: textColor } } }
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-100 text-gray-800 dark:bg-slate-900 dark:text-gray-200 transition-colors duration-300 overflow-x-hidden" x-data="cryptoApp()" x-init="init()">
+
+    <!-- CONFIRMATION MODAL (REMPLACE ALERT/CONFIRM) -->
+    <div x-show="confirmModal.open" x-cloak class="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 fade-in">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border border-gray-200 dark:border-slate-700 transform scale-100 transition-transform">
+            <h3 class="text-lg font-bold mb-2 dark:text-white" x-text="confirmModal.title"></h3>
+            <p class="text-gray-600 dark:text-slate-300 mb-6 text-sm" x-text="confirmModal.message"></p>
+            <div class="flex justify-end gap-3">
+                <button @click="confirmModal.open = false" class="px-4 py-2 text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg text-sm font-bold transition" x-text="t('cancel')"></button>
+                <button @click="confirmModal.onConfirm(); confirmModal.open = false" class="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-500 rounded-lg text-sm font-bold shadow-lg shadow-indigo-500/30 transition" x-text="t('confirmAction')"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOCK SCREEN -->
+    <div x-show="locked" class="fixed inset-0 z-50 bg-gray-900 flex flex-col items-center justify-center p-4">
+        <div class="bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-2xl max-w-sm w-full text-center">
+            <div class="mb-6 w-16 h-16 rounded-full bg-indigo-500/10 flex items-center justify-center mx-auto text-indigo-500"><i class="fas fa-fingerprint text-3xl"></i></div>
+            <h2 class="text-2xl font-bold mb-6 text-white" x-text="savedPin ? t('enterPin') : t('setPin')"></h2>
+            <input type="password" x-model="pinInput" maxlength="6" class="w-full bg-gray-900 border border-gray-700 rounded-xl p-4 text-center text-3xl tracking-widest text-white focus:border-indigo-500 outline-none mb-6">
+            <button @click="unlockApp()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition" x-text="t('unlock')"></button>
+            <p class="mt-6 text-xs text-gray-500" x-text="t('welcomeShare')"></p>
+        </div>
+    </div>
+
+    <!-- APP CONTENT -->
+    <div class="max-w-7xl mx-auto p-4 md:p-6 min-h-screen flex flex-col" :class="locked ? 'blur-md pointer-events-none' : ''">
+        
+        <!-- HEADER -->
+        <header class="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-lg mb-6">
+            <div class="flex items-center gap-4 mb-4 md:mb-0">
+                <div class="bg-indigo-600 p-3 rounded-lg text-white"><i class="fas fa-rocket text-xl"></i></div>
+                <div>
+                    <h1 class="text-2xl font-bold text-indigo-600 dark:text-white">Crypto Station V8.1</h1>
+                    <div class="flex items-center text-xs text-gray-500 dark:text-slate-400">
+                        <span class="w-2 h-2 rounded-full mr-2" :class="loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'"></span>
+                        <span x-text="loading ? 'Sync...' : 'Ultimate Edition'"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button @click="toggleTheme()" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas" :class="darkMode ? 'fa-sun text-yellow-400' : 'fa-moon text-gray-600'"></i></button>
+                <button @click="showSettings = !showSettings" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas fa-cog text-gray-600 dark:text-gray-300"></i></button>
+                <button @click="togglePriv()" class="p-2 bg-gray-100 dark:bg-slate-700 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600 transition"><i class="fas text-gray-600 dark:text-gray-300" :class="privacy ? 'fa-eye-slash' : 'fa-eye'"></i></button>
+            </div>
+        </header>
+
+        <!-- SETTINGS PANEL -->
+        <div x-show="showSettings" x-cloak class="mb-6 bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 fade-in shadow-xl relative z-10">
+            <h3 class="font-bold mb-4 border-b border-gray-200 dark:border-slate-700 pb-2" x-text="t('settings')"></h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 dark:text-slate-400 mb-1">Langue / Language</label>
+                        <button @click="toggleLang()" class="px-4 py-2 bg-gray-100 dark:bg-slate-700 rounded text-sm font-bold uppercase" x-text="settings.lang"></button>
+                    </div>
+                    <div class="flex gap-2">
+                        <!-- BOUTONS AVEC CONFIRMATION MODALE -->
+                        <button @click="triggerReset()" class="px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 rounded text-xs font-bold uppercase hover:opacity-80" x-text="t('resetApp')"></button>
+                        <button @click="triggerDemo()" class="px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900 rounded text-xs font-bold uppercase hover:opacity-80" x-text="t('demoMode')"></button>
+                    </div>
+                </div>
+                <div class="bg-gray-50 dark:bg-slate-900/50 p-4 rounded-lg border border-gray-200 dark:border-slate-700/50">
+                    <label class="block text-xs text-indigo-600 dark:text-indigo-400 font-bold mb-3 uppercase" x-text="t('backupTitle')"></label>
+                    <div class="flex gap-2 mb-2">
+                        <button @click="exportCSV()" class="flex-1 px-3 py-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                            <i class="fas fa-file-excel"></i> <span x-text="t('exportCSV')"></span>
+                        </button>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="exportJSON()" class="flex-1 px-3 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-900 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                            <i class="fas fa-save"></i> <span x-text="t('exportJSON')"></span>
+                        </button>
+                        <button @click="triggerImport()" class="flex-1 px-3 py-2 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 border border-orange-200 dark:border-orange-900 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                            <i class="fas fa-upload"></i> <span x-text="t('importJSON')"></span>
+                        </button>
+                        <input type="file" id="jsonInput" class="hidden" accept=".json" @change="handleImport">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="flex space-x-6 mb-6 border-b border-gray-200 dark:border-slate-700 pb-2 overflow-x-auto">
+            <button @click="tab = 'dashboard'" class="pb-2 font-medium transition" :class="tab==='dashboard' ? 'tab-active' : 'tab-inactive'" x-text="t('dashboard')"></button>
+            <button @click="tab = 'analytics'; setTimeout(updateCharts, 100)" class="pb-2 font-medium transition" :class="tab==='analytics' ? 'tab-active' : 'tab-inactive'" x-text="t('analytics')"></button>
+        </div>
+
+        <!-- DASHBOARD -->
+        <div x-show="tab === 'dashboard'" x-cloak class="fade-in">
+            <!-- KPIs -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-gray-200 dark:border-slate-700 shadow-md relative overflow-hidden">
+                    <div class="absolute right-0 top-0 p-4 opacity-10"><i class="fas fa-wallet text-6xl text-gray-500 dark:text-white"></i></div>
+                    <div class="text-gray-500 dark:text-slate-400 text-xs font-bold uppercase" x-text="t('netWorth')"></div>
+                    <div class="text-3xl font-bold text-gray-800 dark:text-white mt-1" x-text="formatMoney(totalVal)"></div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-gray-200 dark:border-slate-700 shadow-md">
+                    <div class="text-gray-500 dark:text-slate-400 text-xs font-bold uppercase" x-text="t('pnl')"></div>
+                    <div class="text-xl font-bold mt-1" :class="totalPnL >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'" x-text="(totalPnL>=0?'+':'') + formatMoney(totalPnL)"></div>
+                </div>
+                <!-- Mini Add Form -->
+                <div class="md:col-span-2 bg-white dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 flex gap-2 items-end shadow-md">
+                    <div class="flex-1">
+                        <label class="text-xs text-gray-500 dark:text-slate-400">Crypto</label>
+                        <select x-model="form.symbol" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm dark:text-white"><template x-for="a in assets"><option :value="a.symbol" x-text="a.name"></option></template></select>
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs text-gray-500 dark:text-slate-400">Montant ($)</label>
+                        <input type="number" x-model="form.amount" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm dark:text-white">
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs text-gray-500 dark:text-slate-400">Qté</label>
+                        <input type="number" x-model="form.qty" step="0.000001" class="w-full bg-gray-50 dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm dark:text-white">
+                    </div>
+                    <button @click="addTx()" class="bg-indigo-600 hover:bg-indigo-500 text-white p-1.5 rounded w-10 h-8 flex items-center justify-center"><i class="fas fa-plus"></i></button>
+                    <!-- Button DCA Tool -->
+                    <button @click="showDCA = !showDCA" class="bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 p-1.5 rounded w-10 h-8 flex items-center justify-center" title="Simulateur DCA"><i class="fas fa-calculator"></i></button>
+                </div>
+            </div>
+
+            <!-- DCA TOOL PANEL -->
+            <div x-show="showDCA" x-cloak class="mb-6 bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/50 fade-in">
+                <h4 class="font-bold text-indigo-700 dark:text-indigo-400 text-sm mb-3"><i class="fas fa-calculator mr-2"></i> <span x-text="t('dcaTitle')"></span></h4>
+                <div class="flex flex-col md:flex-row gap-4 items-end">
+                    <div>
+                        <label class="text-xs text-gray-500 dark:text-slate-400">Crypto</label>
+                        <select x-model="dcaForm.symbol" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm w-32 dark:text-white"><template x-for="a in assets"><option :value="a.symbol" x-text="a.symbol"></option></template></select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 dark:text-slate-400" x-text="t('newBuy') + ' ($)'"></label>
+                        <input type="number" x-model="dcaForm.newAmount" class="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-600 rounded p-1.5 text-sm w-32 dark:text-white">
+                    </div>
+                    <div class="flex-1 flex gap-4 text-sm bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700">
+                        <div>
+                            <div class="text-xs text-gray-400" x-text="t('currentAvg')"></div>
+                            <div class="font-bold dark:text-white" x-text="formatMoney(dcaSimulation.currentAvg)"></div>
+                        </div>
+                        <div class="text-gray-400"><i class="fas fa-arrow-right mt-2"></i></div>
+                        <div>
+                            <div class="text-xs text-indigo-500" x-text="t('newAvg')"></div>
+                            <div class="font-bold text-indigo-600 dark:text-indigo-400" x-text="formatMoney(dcaSimulation.newAvg)"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ASSETS LIST -->
+            <div class="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden shadow-lg">
+                <div class="p-4 bg-gray-50 dark:bg-slate-750 font-bold border-b border-gray-200 dark:border-slate-700 flex justify-between">
+                    <span class="dark:text-white">Positions</span>
+                    <div class="flex space-x-2">
+                        <button @click="filterWallet='all'" class="text-xs px-2 py-1 rounded" :class="filterWallet==='all'?'bg-indigo-600 text-white':'bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400'">All</button>
+                        <button @click="filterWallet='spot'" class="text-xs px-2 py-1 rounded" :class="filterWallet==='spot'?'bg-blue-600 text-white':'bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-slate-400'">Spot</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-800/50 uppercase text-xs">
+                            <tr><th class="p-4">Asset</th><th class="p-4">Price</th><th class="p-4">Value</th><th class="p-4">PnL</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-slate-700">
+                            <template x-for="item in portfolio" :key="item.symbol">
+                                <tr class="hover:bg-gray-50 dark:hover:bg-slate-700/50 transition">
+                                    <td class="p-4 flex items-center gap-3">
+                                        <div class="w-1.5 h-8 rounded-full" :style="'background:'+item.color"></div>
+                                        <div><div class="font-bold dark:text-white" x-text="item.name"></div><div class="text-xs text-gray-500 dark:text-slate-500" x-text="item.totalQty.toFixed(4)"></div></div>
+                                    </td>
+                                    <td class="p-4 text-gray-600 dark:text-slate-300" x-text="formatMoney(item.currentPrice)"></td>
+                                    <td class="p-4 font-bold dark:text-white" x-text="formatMoney(item.currentValue)"></td>
+                                    <td class="p-4 font-bold" :class="item.pnl >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'" x-text="(item.pnl>=0?'+':'') + formatMoney(item.pnl)"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ANALYTICS TAB -->
+        <div x-show="tab === 'analytics'" x-cloak class="fade-in space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- METRICS -->
+                <div class="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 md:col-span-3 shadow-md">
+                    <h3 class="font-bold mb-4 text-indigo-600 dark:text-indigo-400 flex items-center"><i class="fas fa-chart-bar mr-2"></i> Indicateurs</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                        <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded-lg">
+                            <div class="text-xs text-gray-500 dark:text-slate-400 uppercase" x-text="t('volatility')"></div>
+                            <div class="text-xl font-bold mt-1 dark:text-white" x-text="volatility.toFixed(2) + '%'"></div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded-lg">
+                            <div class="text-xs text-gray-500 dark:text-slate-400 uppercase" x-text="t('projection')"></div>
+                            <div class="text-xl font-bold mt-1 text-indigo-600 dark:text-indigo-400" x-text="formatMoney(projection)"></div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-slate-900 p-4 rounded-lg">
+                            <div class="text-xs text-gray-500 dark:text-slate-400 uppercase" x-text="t('risk')"></div>
+                            <div class="text-xl font-bold mt-1" :class="riskLevel === 'Low' ? 'text-green-500' : (riskLevel === 'High' ? 'text-red-500' : 'text-yellow-500')" x-text="riskLevel"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GRAPHS -->
+                <div class="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 md:col-span-2 shadow-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold dark:text-white">Historique</h3>
+                        <div class="flex space-x-1 text-xs">
+                            <button @click="chartRange='7d'; updateCharts()" class="px-2 py-1 rounded" :class="chartRange==='7d' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'">7J</button>
+                            <button @click="chartRange='1m'; updateCharts()" class="px-2 py-1 rounded" :class="chartRange==='1m' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'">1M</button>
+                            <button @click="chartRange='3m'; updateCharts()" class="px-2 py-1 rounded" :class="chartRange==='3m' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'">3M</button>
+                            <button @click="chartRange='all'; updateCharts()" class="px-2 py-1 rounded" :class="chartRange==='all' ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'">Tout</button>
+                        </div>
+                    </div>
+                    <div class="h-64"><canvas id="chartLine"></canvas></div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 p-6 rounded-xl border border-gray-200 dark:border-slate-700 shadow-md">
+                    <h3 class="font-bold mb-4 dark:text-white">Allocation</h3>
+                    <div class="h-64"><canvas id="chartPie"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
